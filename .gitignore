@@ -1,0 +1,13 @@
+.specstory/
+.venv/
+
+.DS_Store
+
+# python build artifacts
+*.egg-info/
+__pycache__/
+
+# assets
+audio/
+downloads/
+transcripts/
