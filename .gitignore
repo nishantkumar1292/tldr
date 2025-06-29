@@ -11,3 +11,6 @@ __pycache__/
 audio/
 downloads/
 transcripts/
+
+# environment variables
+.env
