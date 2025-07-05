@@ -16,3 +16,4 @@ tldr, modified from TL;DR ([Wikipedia](https://en.wikipedia.org/wiki/TL;DR)), is
 - [ ] Create documentation and usage examples
 - [ ] Implement video summarization functionality
 - [ ] Implement research paper summarization functionality
+- [ ] infer number of segments from the video length

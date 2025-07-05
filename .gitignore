@@ -11,6 +11,7 @@ __pycache__/
 audio/
 downloads/
 transcripts/
+segmentation_results/
 
 # environment variables
 .env

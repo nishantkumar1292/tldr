@@ -3,8 +3,14 @@ import os
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 from openai import OpenAI
+from pathlib import Path
 
 load_dotenv()
+
+MODEL_TEMPERATURES = {
+    "o4-mini": 1.0,
+}
+
 
 class IntelligentSegmenter:
     """
@@ -14,13 +20,14 @@ class IntelligentSegmenter:
     while respecting API token limits and maintaining context.
     """
 
+
     def __init__(self,
-                 api_key: str = None,
-                 model: str = "gpt-4o-mini",
-                 target_segments: int = 7,
-                 min_segment_minutes: int = 3,
-                 max_segment_minutes: int = 15,
-                 max_tokens_per_request: int = 25000):  # Conservative limit
+                api_key: str = None,
+                model: str = "gpt-4.1",
+                target_segments: int = 7,
+                min_segment_minutes: int = 3,
+                max_segment_minutes: int = 15,
+                max_tokens_per_request: int = 25000):  # Conservative limit
         """
         Initialize the OpenAI-based segmenter.
 
@@ -45,42 +52,36 @@ class IntelligentSegmenter:
 
         self.client = OpenAI(api_key=api_key)
 
-    def segment_transcript(self, transcript: Dict[str, Any]) -> Dict[str, Any]:
+    def segment_transcript(self, transcript: Dict[str, Any], video_path: str = None) -> Dict[str, Any]:
         """
         Main method to segment transcript using GPT analysis.
-
-        Args:
-            transcript: Transcript dict with 'segments' list
-
-        Returns:
-            Dictionary with intelligent segments and metadata
+        Adds caching: if segmentation_results/{video_id}.json exists, load and return it.
         """
         segments = transcript['segments']
         duration_minutes = segments[-1]['end'] / 60.0 if segments else 0
-
+        video_id = Path(video_path).stem if video_path else "default"
+        cache_dir = Path("segmentation_results")
+        cache_dir.mkdir(exist_ok=True)
+        cache_file = cache_dir / f"{video_id}.json"
+        if cache_file.exists():
+            with open(cache_file) as f:
+                return json.load(f)
         print(f"Analyzing {duration_minutes:.1f}-minute transcript with GPT...")
         print(f"Input: {len(segments)} micro-segments")
         print(f"Target: {self.target_segments} intelligent segments")
-
-        # Check if we need to chunk the transcript
         full_transcript_text = self._create_timestamped_transcript(segments)
         estimated_tokens = self._estimate_tokens(full_transcript_text)
-
         print(f"Estimated tokens: {estimated_tokens:,}")
-
         if estimated_tokens > self.max_tokens_per_request:
-            print(f"Transcript too large, using intelligent chunking...")
+            print("Transcript too large, using intelligent chunking...")
             segmentation_result = self._analyze_with_chunking(segments, duration_minutes)
         else:
             print("Analyzing complete transcript...")
             segmentation_result = self._analyze_full_transcript(segments, duration_minutes)
-
-        # Map GPT results back to transcript segments
         intelligent_segments = self._map_to_transcript_segments(
             segmentation_result, segments
         )
-
-        return {
+        result = {
             'segments': intelligent_segments,
             'total_duration_minutes': duration_minutes,
             'original_micro_segments': len(segments),
@@ -88,6 +89,9 @@ class IntelligentSegmenter:
             'processing_method': 'openai_gpt_smart_chunking',
             'estimated_tokens': estimated_tokens
         }
+        with open(cache_file, "w") as f:
+            json.dump(result, f)
+        return result
 
     def _estimate_tokens(self, text: str) -> int:
         """
@@ -174,20 +178,21 @@ class IntelligentSegmenter:
 
         return chunks
 
-    def _analyze_chunk(self, chunk: Dict, target_segments: int) -> Dict:
-        """
-        Analyze a single chunk with GPT.
-        """
-        prompt = f"""You are analyzing a {chunk['duration_minutes']:.1f}-minute section of a podcast transcript.
+    def _build_segmentation_prompt(self, transcript_text, duration_minutes, segment_count):
+        return f"""You are analyzing a {duration_minutes:.1f}-minute podcast transcript to create intelligent topic segments.
 
-TRANSCRIPT SECTION (with second timestamps):
-{chunk['text']}
+TRANSCRIPT (with second timestamps):
+{transcript_text}
 
-TASK: Create {target_segments} meaningful segments from this section that:
-1. Group related discussions together
-2. Have complete narrative arcs
-3. Respect natural conversation flow
-4. Each segment should be {self.min_segment_minutes}-{self.max_segment_minutes} minutes long
+TASK: Create {segment_count} - {segment_count + 2} meaningful segments that:
+1. Each segment must focus on a single, non-repeating, information-dense theme or topic.
+2. Do NOT include segments about jokes, banter, or off-topic conversation—ignore all joking around or filler content. These can be part of the main conversation, but not a segment itself.
+3. Each segment must start with clear context, so the listener immediately understands what is being discussed and why it matters.
+4. Themes must not repeat across segments; each segment should cover a unique aspect or topic.
+5. Group only related discussions together, even if separated by brief tangents, but do NOT merge unrelated topics.
+6. Each segment should be {self.min_segment_minutes}-{self.max_segment_minutes} minutes long.
+7. The content of each segment should be highly information-dense, focusing on insights, analysis, or key facts.
+8. If a segment does not have enough information-dense content, do not create it.
 
 INSTRUCTIONS FOR TIMING:
 - Analyze the timestamped transcript to identify natural topic transitions
@@ -195,34 +200,44 @@ INSTRUCTIONS FOR TIMING:
 - Timestamps are already in seconds (e.g., [1234.5s] = 1234.5 seconds)
 - Find natural breakpoints where topics shift or new discussions begin
 - Ensure segments don't overlap and cover the entire section
-- The start_time should be the actual timestamp of the sentence that starts the segment
+- The start_time should be the actual timestamp of the sentence that starts the segment, and must include context for the topic
 - The end_time should be the actual timestamp of the sentence that ends the segment
 
 For each segment, provide:
 - start_time: Actual start time in seconds based on transcript analysis
 - end_time: Actual end time in seconds based on transcript analysis
-- title: Descriptive, specific title reflecting the actual content
-- theme: 1-3 word topic category
-- description: 2-3 sentences explaining what is actually discussed
+- title: Descriptive, specific title reflecting the actual content (no generic titles)
+- theme: 1-3 word topic category (unique for each segment)
+- description: 2-3 sentences explaining what is actually discussed, with clear context at the start
 
-EXAMPLE OF HOW TO DETERMINE TIMING:
-If you see "[750.0s] We're moving on to discuss AI copyright..."
-And the next major topic shift happens at "[1125.5s] Now let's talk about stocks..."
-Then create: start_time: 750.0, end_time: 1125.5
+REQUIREMENTS:
+- Segments must be chronological (no overlapping times)
+- Must cover the entire {duration_minutes:.1f}-minute duration
+- Titles should be specific and engaging
+- Each segment should have substantial, information-dense content
+- Do NOT include segments about jokes, banter
+- Themes must not repeat across segments
 
 Return as JSON:
 {{
   "segments": [
     {{
-      "start_time": [ACTUAL_START_TIME_IN_SECONDS],
-      "end_time": [ACTUAL_END_TIME_IN_SECONDS],
-      "title": "[ACTUAL_CONTENT_BASED_TITLE]",
-      "theme": "[ACTUAL_THEME]",
-      "description": "[ACTUAL_DESCRIPTION_OF_CONTENT]"
+      "start_time": "Actual start time in seconds. Only include the number, no other text.",
+      "end_time": "Actual end time in seconds. Only include the number, no other text.",
+      "title": "Descriptive Title Here",
+      "theme": "Topic Category",
+      "description": "Clear description of what this segment covers and the key points discussed, with clear context at the start. Don't include statements like 'hosts discuss this..'. Just describe the topic for a person looking at this segment in isolation. Don't mention the timestamps in the description."
     }}
   ]
 }}"""
 
+    def _analyze_chunk(self, chunk: Dict, target_segments: int) -> Dict:
+        prompt = self._build_segmentation_prompt(
+            chunk['text'],
+            chunk['duration_minutes'],
+            target_segments
+        )
+        temperature = MODEL_TEMPERATURES.get(self.model, 0.1)
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -231,133 +246,47 @@ Return as JSON:
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.1
+                temperature=temperature
             )
-
             result = json.loads(response.choices[0].message.content)
             print(f"✓ Chunk {target_segments} segments created")
             return result
-
         except Exception as e:
             print(f"Chunk analysis error: {e}")
             return None
 
-    def _merge_overlapping_segments(self, all_segments: List[Dict]) -> List[Dict]:
-        """
-        Merge segments from overlapping chunks into final coherent segmentation.
-        """
-        if not all_segments:
-            return []
-
-        # Sort by start time
-        all_segments.sort(key=lambda x: x.get('start_time', 0))
-
-        merged = []
-        current_segment = all_segments[0].copy()
-
-        for segment in all_segments[1:]:
-            # If segments overlap significantly, merge them
-            overlap = min(current_segment.get('end_time', 0), segment.get('start_time', 0))
-
-            if overlap > 60:  # More than 1 minute overlap
-                # Extend current segment
-                current_segment['end_time'] = max(current_segment.get('end_time', 0), segment.get('end_time', 0))
-                # Combine titles if different
-                if segment.get('title') not in current_segment.get('title', ''):
-                    current_segment['title'] += f" & {segment.get('title', '')}"
-            else:
-                # No significant overlap, add current and start new
-                merged.append(current_segment)
-                current_segment = segment.copy()
-
-        # Add final segment
-        merged.append(current_segment)
-
-        # Limit to target number of segments
-        if len(merged) > self.target_segments:
-            # Keep the longest/most important segments
-            merged.sort(key=lambda x: x.get('end_time', 0) - x.get('start_time', 0), reverse=True)
-            merged = merged[:self.target_segments]
-            merged.sort(key=lambda x: x.get('start_time', 0))
-
-        return merged
-
     def _analyze_full_transcript(self, segments: List[Dict], duration_minutes: float) -> Dict:
-        """
-        Send complete transcript to GPT for intelligent segmentation analysis.
-        """
         transcript_text = self._create_timestamped_transcript(segments)
-
-        prompt = f"""You are analyzing a {duration_minutes:.0f}-minute podcast transcript to create intelligent topic segments.
-
-COMPLETE TRANSCRIPT (with second timestamps):
-{transcript_text}
-
-TASK: Create exactly {self.target_segments} meaningful segments that:
-1. Group related discussions together (even if separated by brief tangents)
-2. Have complete narrative arcs with clear beginnings and endings
-3. Capture the main themes/topics discussed
-4. Respect natural conversation flow and transitions
-5. Each segment should be {self.min_segment_minutes}-{self.max_segment_minutes} minutes long
-
-ANALYSIS GUIDELINES:
-- Look for natural topic transitions and conversation shifts
-- Group related discussions that may be interrupted by tangents
-- Identify when speakers move to completely new subjects
-- Ensure each segment tells a complete story or covers a complete topic
-- Create segments that would be useful as standalone podcast chapters
-
-INSTRUCTIONS FOR TIMING:
-- Use the [X.Xs] timestamps to determine actual start and end times
-- Timestamps are already in seconds (e.g., [1234.5s] = 1234.5 seconds)
-- Find natural breakpoints where topics shift or new discussions begin
-- Segments must be chronological and non-overlapping
-
-For each segment, provide:
-- start_time: Start time in seconds (number)
-- end_time: End time in seconds (number)
-- title: Descriptive, specific title (e.g., "AI Copyright Ruling Analysis")
-- theme: 1-3 word topic category
-- description: 2-3 sentences explaining the key points discussed
-
-REQUIREMENTS:
-- Segments must be chronological (no overlapping times)
-- Must cover the entire {duration_minutes:.0f}-minute duration
-- Titles should be specific and engaging
-- Each segment should have substantial content
-
-Return as JSON:
-{{
-  "segments": [
-    {{
-      "start_time": 0.0,
-      "end_time": 300.0,
-      "title": "Descriptive Title Here",
-      "theme": "Topic Category",
-      "description": "Clear description of what this segment covers and the key points discussed."
-    }}
-  ]
-}}"""
-
+        prompt = self._build_segmentation_prompt(
+            transcript_text,
+            duration_minutes,
+            self.target_segments
+        )
+        temperature = MODEL_TEMPERATURES.get(self.model, 0.1)
         try:
             print("Sending full transcript to GPT for analysis...")
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are an expert podcast editor who creates intelligent topic-based segments from long-form content. You analyze complete transcripts to find natural breakpoints and create meaningful chapters."},
+                    {"role": "system", "content": f"You are an expert podcast editor creating intelligent topic segments. PAY CLOSE ATTENTION TO THE DURATION OF THE SEGMENTS CREATED AND MAKE SURE THEY ARE STRICTLY WITHIN THE RANGE OF {self.min_segment_minutes}-{self.max_segment_minutes} MINUTES."},
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.1  # Low temperature for consistent segmentation
+                temperature=temperature
             )
-
             result = json.loads(response.choices[0].message.content)
             print(f"✓ GPT analysis complete - created {len(result.get('segments', []))} segments")
             return result
-
         except Exception as e:
             print(f"OpenAI API error: {e}")
             return self._create_fallback_segments(segments, duration_minutes)
+
+    def _parse_time(self, val):
+        if isinstance(val, (int, float)):
+            return float(val)
+        if isinstance(val, str):
+            return float(val.strip().replace('s', '').replace('S', ''))
+        return 0.0
 
     def _map_to_transcript_segments(self, gpt_result: Dict, original_segments: List[Dict]) -> List[Dict]:
         """
@@ -366,8 +295,8 @@ Return as JSON:
         intelligent_segments = []
 
         for segment_info in gpt_result.get('segments', []):
-            start_seconds = float(segment_info.get('start_time', 0))
-            end_seconds = float(segment_info.get('end_time', 0))
+            start_seconds = self._parse_time(segment_info.get('start_time', 0))
+            end_seconds = self._parse_time(segment_info.get('end_time', 0))
 
             # Find transcript segments within this time range
             segment_texts = []
@@ -431,3 +360,27 @@ Return as JSON:
             summary += f"   {segment['description']}\n\n"
 
         return summary
+
+def extract_video_segments(video_path, segments, output_dir):
+    Path(output_dir).mkdir(exist_ok=True, parents=True)
+    manifest_path = Path(output_dir) / "manifest.json"
+    if manifest_path.exists():
+        with open(manifest_path) as f:
+            return json.load(f)
+    from .extractor import VideoSplitter
+    splitter = VideoSplitter()
+    results = []
+    for i, seg in enumerate(segments):
+        start = seg.get('start_time', 0)
+        end = seg.get('end_time', 0)
+        if end - start < 2:
+            continue
+        out_path = Path(output_dir) / f'segment_{i+1:03d}.mp4'
+        if not out_path.exists():
+            splitter.split(video_path, start, end, out_path)
+        meta = dict(seg)
+        meta['video_path'] = str(out_path)
+        results.append(meta)
+    with open(manifest_path, "w") as f:
+        json.dump(results, f)
+    return results

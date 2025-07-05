@@ -25,3 +25,15 @@ class AudioExtractor:
         ).overwrite_output().run(quiet=True)
 
         return str(audio_path)
+
+class VideoSplitter:
+    def split(self, video_path, start_time, end_time, output_path, overwrite=False):
+        if Path(output_path).exists() and not overwrite:
+            return str(output_path)
+        (
+            ffmpeg.input(str(video_path), ss=start_time, to=end_time)
+            .output(str(output_path), c='copy')
+            .overwrite_output()
+            .run(quiet=True)
+        )
+        return str(output_path)
