@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import List
 from .core.downloader import YouTubeDownloader
-from .core.extractor import AudioExtractor
+from .core.extractor import AudioExtractor, VideoSplitter
 from .core.transcriber import Transcriber
 from .core.segmenter import IntelligentSegmenter
 from . import Segment
@@ -32,6 +32,7 @@ class YouTubeSummarizer:
         # Initialize components
         self.downloader = YouTubeDownloader(output_dir="downloads")
         self.extractor = AudioExtractor(output_dir="audio")
+        self.video_splitter = VideoSplitter()
         self.transcriber = Transcriber(cache_dir="transcripts")
         self.segmenter = IntelligentSegmenter(
             api_key=openai_api_key,
@@ -71,23 +72,38 @@ class YouTubeSummarizer:
         print("Segmenting and summarizing...")
         segmentation_result = self.segmenter.segment_transcript(transcript, video_path)
 
-        # Step 5: Convert to Segment objects
+        # Step 5: Convert to Segment objects and create video segments
         segments = []
-        for seg in segmentation_result['segments']:
+        segments_dir = self.output_dir / "segments"
+        segments_dir.mkdir(exist_ok=True)
+
+        for i, seg in enumerate(segmentation_result['segments']):
             duration_seconds = seg['end_time'] - seg['start_time']
             duration_str = self._format_duration(duration_seconds)
 
+            # Create video segment
+            segment_filename = f"segment_{i+1:02d}_{seg['title'].replace(' ', '_')[:30]}.mp4"
+            segment_path = segments_dir / segment_filename
+
+            print(f"Creating video segment {i+1}/{len(segmentation_result['segments'])}: {segment_filename}")
+            self.video_splitter.split(
+                video_path,
+                seg['start_time'],
+                seg['end_time'],
+                segment_path
+            )
+
             segment = Segment(
                 title=seg['title'],
-                summary=seg['description'],  # Use 'description' from segmenter
+                summary=seg['description'],
                 duration=duration_str,
                 start_time=seg['start_time'],
                 end_time=seg['end_time'],
-                video_path=video_path
+                video_path=str(segment_path)
             )
             segments.append(segment)
 
-        print(f"Created {len(segments)} segments")
+        print(f"Created {len(segments)} video segments")
         return segments
 
     def _format_duration(self, seconds: float) -> str:
