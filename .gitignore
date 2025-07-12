@@ -12,6 +12,7 @@ audio/
 downloads/
 transcripts/
 segmentation_results/
+output/
 
 # environment variables
 .env

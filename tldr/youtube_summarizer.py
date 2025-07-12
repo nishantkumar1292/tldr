@@ -74,8 +74,11 @@ class YouTubeSummarizer:
 
         # Step 5: Convert to Segment objects and create video segments
         segments = []
-        segments_dir = self.output_dir / "segments"
-        segments_dir.mkdir(exist_ok=True)
+        # Create unique segments directory for this video
+        safe_title = "".join(c for c in video_title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        safe_title = safe_title.replace(' ', '_')[:50]  # Limit length and replace spaces
+        segments_dir = self.output_dir / "segments" / safe_title
+        segments_dir.mkdir(parents=True, exist_ok=True)
 
         for i, seg in enumerate(segmentation_result['segments']):
             duration_seconds = seg['end_time'] - seg['start_time']
