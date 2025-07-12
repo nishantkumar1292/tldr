@@ -9,8 +9,14 @@ Summarize long-form content from YouTube (for now, more content support coming s
 $ git clone https://github.com/nishantkumar1292/tldr.git
 $ cd tldr
 
-# Install dependencies (recommended in a virtualenv)
-$ uv pip install -e .
+# Install dependencies (create a virtual environment and install dependencies in pyproject.toml file)
+$ uv sync
+
+# Install PyTorch with CUDA support (optional, for GPU acceleration)
+$ uv pip install torch --index-url https://download.pytorch.org/whl/cu128
+
+# Activate the virtual environment
+$ source .venv/bin/activate
 ```
 
 ## Usage
@@ -18,13 +24,37 @@ $ uv pip install -e .
 ### Python API (YouTube Example)
 ```python
 from tldr import YouTubeSummarizer
-summarizer = YouTubeSummarizer()
+
+# Initialize the summarizer
+summarizer = YouTubeSummarizer(
+    model="gpt-4o-mini",  # OpenAI model to use
+    target_segments=7,    # Number of segments to create
+    min_segment_minutes=3,  # Minimum segment duration
+    max_segment_minutes=15  # Maximum segment duration
+)
+
+# Process a YouTube video
 segments = summarizer.process("https://youtube.com/watch?v=YOUR_VIDEO_ID")
+
+# Display results
 for segment in segments:
     print(f"Title: {segment.title}")
     print(f"Summary: {segment.summary}")
     print(f"Duration: {segment.duration}")
+    print(f"Time: {segment.start_time:.1f}s - {segment.end_time:.1f}s")
+    print("-" * 30)
 ```
+
+**Note:** You need to set the `OPENAI_API_KEY` environment variable for the summarization to work.
+
+### Segment Data Structure
+Each segment returned by the API contains:
+- `title`: Descriptive title of the segment
+- `summary`: Detailed summary of the segment content
+- `duration`: Human-readable duration (e.g., "5m 30s")
+- `start_time`: Start time in seconds
+- `end_time`: End time in seconds
+- `video_path`: Path to the downloaded video file
 
 ### CLI
 ```bash
