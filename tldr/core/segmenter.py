@@ -249,7 +249,7 @@ Return as JSON:
                 temperature=temperature
             )
             result = json.loads(response.choices[0].message.content)
-            print(f"✓ Chunk {target_segments} segments created")
+            print(f"✓ {target_segments} segments created for chunk")
             return result
         except Exception as e:
             print(f"Chunk analysis error: {e}")

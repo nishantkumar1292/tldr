@@ -56,7 +56,7 @@ Each segment returned by the API contains:
 - `end_time`: End time in seconds
 - `video_path`: Path to the downloaded video file
 
-### CLI
+### CLI (pending...)
 ```bash
 # Summarize a YouTube video
 $ tldr youtube https://youtube.com/watch?v=YOUR_VIDEO_ID --output-dir ./output
@@ -80,6 +80,5 @@ $ tldr youtube https://youtube.com/watch?v=YOUR_VIDEO_ID --output-dir ./output
 - [ ] Publish package to PyPI as `omni-tldr`
 - [ ] Set up proper package structure with setup.py/pyproject.toml
 - [ ] Create documentation and usage examples
-- [ ] Implement video summarization functionality
 - [ ] Implement research paper summarization functionality
 - [ ] infer number of segments from the video length
