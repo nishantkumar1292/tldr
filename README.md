@@ -27,7 +27,7 @@ from tldr import YouTubeSummarizer
 
 # Initialize the summarizer
 summarizer = YouTubeSummarizer(
-    model="gpt-4o-mini",  # OpenAI model to use
+    model="o4-mini",  # OpenAI model to use - works better with reasoning models for long videos
     target_segments=7,    # Number of segments to create
     min_segment_minutes=3,  # Minimum segment duration
     max_segment_minutes=15  # Maximum segment duration
@@ -49,12 +49,15 @@ for segment in segments:
 
 ### Segment Data Structure
 Each segment returned by the API contains:
-- `title`: Descriptive title of the segment
-- `summary`: Detailed summary of the segment content
-- `duration`: Human-readable duration (e.g., "5m 30s")
 - `start_time`: Start time in seconds
 - `end_time`: End time in seconds
-- `video_path`: Path to the downloaded video file
+- `duration_minutes`: Duration of the segment in minutes
+- `title`: Descriptive title of the segment
+- `theme`: Theme of the segment
+- `description`: Detailed summary of the segment content
+- `text`: Transcript of the segment
+
+
 
 ### CLI (pending...)
 ```bash
