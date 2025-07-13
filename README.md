@@ -62,7 +62,7 @@ Each segment returned by the API contains:
 ### CLI (pending...)
 ```bash
 # Summarize a YouTube video
-$ tldr youtube https://youtube.com/watch?v=YOUR_VIDEO_ID --output-dir ./output
+$ tldr youtube 'https://youtube.com/watch?v=YOUR_VIDEO_ID' --output-dir ./output
 ```
 
 ---

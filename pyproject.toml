@@ -14,6 +14,9 @@ dependencies = [
     "dotenv>=0.9.9",
 ]
 
+[project.scripts]
+tldr = "tldr.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["tldr*"]
