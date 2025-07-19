@@ -20,4 +20,4 @@ tldr = "tldr.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["tldr*"]
-exclude = ["downloads*", "audio*"]
+exclude = ["downloads*", "audio*", "webapp*", "web*"]

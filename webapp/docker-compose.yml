@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  tldr-web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./downloads:/app/downloads
+      - ./audio:/app/audio
+      - ./transcripts:/app/transcripts
+      - ./output:/app/output
+    restart: unless-stopped

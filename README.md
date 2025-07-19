@@ -87,3 +87,4 @@ $ tldr youtube 'https://youtube.com/watch?v=YOUR_VIDEO_ID' --output-dir ./output
 - [ ] infer number of segments from the video length
 - [ ] Build a web app to allow users to use this without setting up the environment
 - [ ] Build an X handle to do this.
+- [ ] cut video based on a prompt

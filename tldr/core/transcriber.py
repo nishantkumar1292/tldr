@@ -1,15 +1,31 @@
 from faster_whisper import WhisperModel
 import torch
 import json
+import os
 from pathlib import Path
 
 class Transcriber:
-    def __init__(self, model_name="base", cache_dir="transcripts"):
-        # Auto-detect best available device
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+    def __init__(self, model_name="base", cache_dir="transcripts", device=None):
+        # Fix OpenMP conflict on macOS
+        os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
+        # Use CPU by default to avoid OpenMP conflicts
+        # GPU can be enabled explicitly if needed
+        if device is None:
+            device = "cpu"  # Default to CPU to avoid conflicts
+        elif device == "auto":
+            device = "cuda" if torch.cuda.is_available() else "cpu"
 
         print(f"Using device: {device}")
-        self.model = WhisperModel(model_name, device=device)
+
+        # Initialize model with compute type optimization
+        compute_type = "int8" if device == "cpu" else "float16"
+        self.model = WhisperModel(
+            model_name,
+            device=device,
+            compute_type=compute_type,
+            num_workers=1  # Reduce threading to avoid conflicts
+        )
 
         # Setup cache directory
         self.cache_dir = Path(cache_dir)
@@ -30,9 +46,14 @@ class Transcriber:
 
         print("Starting transcription...")
 
+        # Use beam_size=1 for faster processing
         segments, info = self.model.transcribe(
             str(audio_path),
-            log_progress=True  # Enable built-in progress logging
+            log_progress=True,
+            beam_size=1,  # Faster processing
+            language="en",  # Assuming English, speeds up processing
+            vad_filter=True,  # Voice activity detection
+            vad_parameters=dict(min_silence_duration_ms=500)
         )
 
         # Convert to list and format
