@@ -42,7 +42,7 @@ class YouTubeSummarizer:
             max_segment_minutes=max_segment_minutes
         )
 
-    def process(self, url: str) -> List[Segment]:
+    def process(self, url: str, strict: bool = False) -> List[Segment]:
         """
         Process a YouTube video and return summarized segments
 
@@ -83,6 +83,20 @@ class YouTubeSummarizer:
         for i, seg in enumerate(segmentation_result['segments']):
             duration_seconds = seg['end_time'] - seg['start_time']
             duration_str = self._format_duration(duration_seconds)
+
+            if strict:
+                # check if the segment is longer than max_segment_minutes
+                if duration_seconds > self.max_segment_minutes * 60:
+                    print(f"Segment {i+1} is longer than {self.max_segment_minutes} minutes, skipping")
+                    continue
+                # check if the segment is shorter than min_segment_minutes
+                if duration_seconds < self.min_segment_minutes * 60:
+                    print(f"Segment {i+1} is shorter than {self.min_segment_minutes} minutes, skipping")
+                    continue
+                # check if the target segments is reached
+                if len(segments) >= self.target_segments:
+                    print("Target segments reached, skipping")
+                    break
 
             # Create video segment
             segment_filename = f"segment_{i+1:02d}_{seg['title'].replace(' ', '_')[:30]}.mp4"
